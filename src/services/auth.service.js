@@ -52,7 +52,7 @@ export async function login(correo, contrasena) {
   }
 
   const { rows } = await pool.query(
-    'SELECT id, nombre_completo, correo, contrasena_hash, activo FROM usuarios WHERE correo = $1',
+    'SELECT id, nombre_completo, correo, contrasena_hash, activo, correo_verificado FROM usuarios WHERE correo = $1',
     [correo]
   );
 
@@ -64,6 +64,10 @@ export async function login(correo, contrasena) {
   if (!user.activo) {
     throw createError(403, 'Cuenta desactivada');
   }
+
+  if (!user.correo_verificado) {
+  throw createError(403, 'Debes verificar tu correo antes de ingresar');
+}
 
   const accessToken = generateAccessToken(user);
   const refreshTokenRaw = generateRefreshToken();
