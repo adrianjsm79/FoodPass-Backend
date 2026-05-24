@@ -4,6 +4,7 @@
  */
 export function errorHandler(err, req, res, _next) {
   console.error(`[ERROR] ${req.method} ${req.path}:`, err.message);
+  console.error(err.stack); // ← stack trace completo
 
   // Errores de negocio esperados (los lanzamos con statusCode en los services)
   if (err.statusCode) {

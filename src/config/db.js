@@ -1,23 +1,20 @@
 import pg from 'pg';
- 
+
 const { Pool } = pg;
- 
-/**
- * Pool único de conexiones a PostgreSQL.
- * La variable DATABASE_URL se genera automáticamente en Render
- */
+
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-  max: 10,
+  ssl: { rejectUnauthorized: false },
+  max: 2,
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 5000,
+  connectionTimeoutMillis: 15000,
+  // ← quita allowExitOnIdle
 });
- 
+
 pool.on('error', (err) => {
-  console.error('Error inesperado en el pool de PostgreSQL:', err);
+  console.error('Error en el pool:', err.message);
 });
- 
+
 export async function testConnection() {
   const client = await pool.connect();
   try {
@@ -27,6 +24,5 @@ export async function testConnection() {
     client.release();
   }
 }
- 
+
 export default pool;
- 

@@ -4,7 +4,7 @@ import crypto from 'crypto';
 import pool from '../config/db.js';
 import { createError } from '../middlewares/error.middleware.js';
 
-const ACCESS_TOKEN_EXPIRY = '15m';
+const ACCESS_TOKEN_EXPIRY = '8h';
 const REFRESH_TOKEN_EXPIRY_DAYS = 7;
 
 // ─── Helpers de token ──────────────────────────────────────────────────────────
@@ -65,9 +65,9 @@ export async function login(correo, contrasena) {
     throw createError(403, 'Cuenta desactivada');
   }
 
-  if (!user.correo_verificado) {
-  throw createError(403, 'Debes verificar tu correo antes de ingresar');
-}
+//  if (!user.correo_verificado) {
+//  throw createError(403, 'Debes verificar tu correo antes de ingresar');
+//}
 
   const accessToken = generateAccessToken(user);
   const refreshTokenRaw = generateRefreshToken();
