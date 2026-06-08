@@ -65,9 +65,9 @@ export async function login(correo, contrasena) {
     throw createError(403, 'Cuenta desactivada');
   }
 
-//  if (!user.correo_verificado) {
-//  throw createError(403, 'Debes verificar tu correo antes de ingresar');
-//}
+  if (!user.correo_verificado) {
+    throw createError(403, 'Debes verificar tu correo antes de ingresar');
+  } 
 
   const accessToken = generateAccessToken(user);
   const refreshTokenRaw = generateRefreshToken();
