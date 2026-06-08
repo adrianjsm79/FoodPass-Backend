@@ -4,7 +4,7 @@ import crypto from 'crypto';
 import pool from '../config/db.js';
 import { createError } from '../middlewares/error.middleware.js';
 
-const ACCESS_TOKEN_EXPIRY = '8h';
+const ACCESS_TOKEN_EXPIRY = '15m';
 const REFRESH_TOKEN_EXPIRY_DAYS = 7;
 
 // ─── Helpers de token ──────────────────────────────────────────────────────────
@@ -24,10 +24,10 @@ function generateRefreshToken() {
 // ─── Servicios ─────────────────────────────────────────────────────────────────
 
 export async function registro(data) {
-  const { nombre_completo, correo, contrasena, telefono } = data;
+  const { nombre_completo, correo, contrasena, telefono, institucion_id } = data;
 
-  if (!nombre_completo || !correo || !contrasena) {
-    throw createError(400, 'nombre_completo, correo y contrasena son requeridos');
+  if (!nombre_completo || !correo || !contrasena || !institucion_id) {
+    throw createError(400, 'nombre_completo, correo, contrasena e institucion_id son requeridos');
   }
 
   const existe = await pool.query('SELECT id FROM usuarios WHERE correo = $1', [correo]);
@@ -35,52 +35,89 @@ export async function registro(data) {
     throw createError(409, 'Ya existe una cuenta con ese correo');
   }
 
-  const contrasena_hash = await bcrypt.hash(contrasena, 12);
-  const { rows } = await pool.query(
-    `INSERT INTO usuarios (nombre_completo, correo, telefono, contrasena_hash)
-     VALUES ($1, $2, $3, $4)
-     RETURNING id, nombre_completo, correo, telefono, creado_en`,
-    [nombre_completo, correo, telefono || null, contrasena_hash]
+  const instResult = await pool.query(
+    'SELECT id FROM instituciones WHERE id = $1 AND activo = true',
+    [institucion_id]
   );
+  if (instResult.rowCount === 0) {
+    throw createError(404, 'Institución no encontrada o inactiva');
+  }
 
-  return rows[0];
+  const contrasena_hash = await bcrypt.hash(contrasena, 12);
+
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+ 
+    //Insertar en tabla usuarios
+    const { rows } = await client.query(
+      `INSERT INTO usuarios (nombre_completo, correo, telefono, contrasena_hash)
+       VALUES ($1, $2, $3, $4)
+       RETURNING id, nombre_completo, correo, telefono, creado_en`,
+      [nombre_completo, correo, telefono || null, contrasena_hash]
+    );
+    const usuario = rows[0];
+ 
+    //Obtener el UUID del rol 'USUARIO'
+    const rolResult = await client.query(
+      'SELECT id FROM roles WHERE nombre = $1',
+      ['USUARIO']
+    );
+    if (rolResult.rowCount === 0) {
+      throw createError(500, 'El rol USUARIO no existe en la base de datos. Ejecuta el seed.sql.');
+    }
+ 
+    //Vincular usuario ↔ institución con rol USUARIO y modalidad PREPAGO por defecto
+    await client.query(
+      `INSERT INTO usuario_institucion_roles (usuario_id, institucion_id, rol_id, modalidad_pago)
+       VALUES ($1, $2, $3, 'PREPAGO')`,
+      [usuario.id, institucion_id, rolResult.rows[0].id]
+    );
+ 
+    await client.query('COMMIT');
+    return usuario;
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 }
+
+
 
 export async function login(correo, contrasena) {
   if (!correo || !contrasena) {
     throw createError(400, 'correo y contrasena son requeridos');
   }
-
+ 
   const { rows } = await pool.query(
-    'SELECT id, nombre_completo, correo, contrasena_hash, activo, correo_verificado FROM usuarios WHERE correo = $1',
+    'SELECT id, nombre_completo, correo, contrasena_hash, activo FROM usuarios WHERE correo = $1',
     [correo]
   );
-
+ 
   const user = rows[0];
   if (!user || !(await bcrypt.compare(contrasena, user.contrasena_hash))) {
     throw createError(401, 'Credenciales inválidas');
   }
-
+ 
   if (!user.activo) {
     throw createError(403, 'Cuenta desactivada');
   }
-
-  if (!user.correo_verificado) {
-    throw createError(403, 'Debes verificar tu correo antes de ingresar');
-  } 
-
+ 
   const accessToken = generateAccessToken(user);
   const refreshTokenRaw = generateRefreshToken();
   const refreshTokenHash = crypto.createHash('sha256').update(refreshTokenRaw).digest('hex');
   const expiresAt = new Date(Date.now() + REFRESH_TOKEN_EXPIRY_DAYS * 86400000);
-
+ 
   await pool.query(
     `INSERT INTO tokens_refresco (usuario_id, token_hash, expira_en)
      VALUES ($1, $2, $3)`,
     [user.id, refreshTokenHash, expiresAt]
   );
-
-  // Obtener instituciones del usuario
+ 
+  //Obtener instituciones del usuario
   const { rows: instituciones } = await pool.query(
     `SELECT i.id, i.nombre, i.slug, i.logo_url, r.nombre AS rol, uir.modalidad_pago
      FROM usuario_institucion_roles uir
@@ -89,7 +126,7 @@ export async function login(correo, contrasena) {
      WHERE uir.usuario_id = $1 AND uir.activo = true AND i.activo = true`,
     [user.id]
   );
-
+ 
   return {
     accessToken,
     refreshToken: refreshTokenRaw,
@@ -104,9 +141,9 @@ export async function login(correo, contrasena) {
 
 export async function refreshAccessToken(refreshTokenRaw) {
   if (!refreshTokenRaw) throw createError(400, 'refreshToken requerido');
-
+ 
   const tokenHash = crypto.createHash('sha256').update(refreshTokenRaw).digest('hex');
-
+ 
   const { rows } = await pool.query(
     `SELECT t.id, t.usuario_id, t.expira_en, t.revocado, u.nombre_completo, u.correo, u.activo
      FROM tokens_refresco t
@@ -114,19 +151,19 @@ export async function refreshAccessToken(refreshTokenRaw) {
      WHERE t.token_hash = $1`,
     [tokenHash]
   );
-
+ 
   const token = rows[0];
   if (!token) throw createError(401, 'Refresh token inválido');
   if (token.revocado) throw createError(401, 'Refresh token revocado');
   if (new Date(token.expira_en) < new Date()) throw createError(401, 'Refresh token expirado');
   if (!token.activo) throw createError(403, 'Cuenta desactivada');
-
+ 
   const accessToken = generateAccessToken({
     id: token.usuario_id,
     correo: token.correo,
     nombre_completo: token.nombre_completo,
   });
-
+ 
   return { accessToken };
 }
 
