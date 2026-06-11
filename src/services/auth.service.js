@@ -198,3 +198,57 @@ export async function getMe(userId) {
   if (!rows[0]) throw createError(404, 'Usuario no encontrado');
   return rows[0];
 }
+
+export async function getUserByEmail(correo) {
+  const { rows } = await pool.query(
+    'SELECT id, nombre_completo, correo FROM usuarios WHERE correo = $1',
+    [correo]
+  );
+  if (rows.length === 0) {
+    throw createError(404, 'Usuario no encontrado');
+  }
+  return rows[0];
+}
+
+export async function loginWithOTP(userId) {
+  const { rows } = await pool.query(
+    'SELECT id, nombre_completo, correo, activo FROM usuarios WHERE id = $1',
+    [userId]
+  );
+
+  const user = rows[0];
+  if (!user) throw createError(404, 'Usuario no encontrado');
+  if (!user.activo) throw createError(403, 'Cuenta desactivada');
+
+  const accessToken = generateAccessToken(user);
+  const refreshTokenRaw = generateRefreshToken();
+  const refreshTokenHash = crypto.createHash('sha256').update(refreshTokenRaw).digest('hex');
+  const expiresAt = new Date(Date.now() + REFRESH_TOKEN_EXPIRY_DAYS * 86400000);
+
+  await pool.query(
+    `INSERT INTO tokens_refresco (usuario_id, token_hash, expira_en)
+     VALUES ($1, $2, $3)`,
+    [user.id, refreshTokenHash, expiresAt]
+  );
+
+  // Obtener instituciones del usuario
+  const { rows: instituciones } = await pool.query(
+    `SELECT i.id, i.nombre, i.slug, i.logo_url, r.nombre AS rol, uir.modalidad_pago
+     FROM usuario_institucion_roles uir
+     JOIN instituciones i ON i.id = uir.institucion_id
+     JOIN roles r ON r.id = uir.rol_id
+     WHERE uir.usuario_id = $1 AND uir.activo = true AND i.activo = true`,
+    [user.id]
+  );
+
+  return {
+    accessToken,
+    refreshToken: refreshTokenRaw,
+    user: {
+      id: user.id,
+      nombre_completo: user.nombre_completo,
+      correo: user.correo,
+    },
+    instituciones,
+  };
+}

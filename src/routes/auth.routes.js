@@ -9,5 +9,7 @@ router.post('/login', authCtrl.login);
 router.post('/refresh', authCtrl.refreshToken);
 router.post('/logout', authCtrl.logout);
 router.get('/me', verifyToken, authCtrl.getMe);
+router.post('/otp/enviar', authCtrl.enviarOTP);
+router.post('/otp/verificar', authCtrl.verificarOTP);
 
 export default router;

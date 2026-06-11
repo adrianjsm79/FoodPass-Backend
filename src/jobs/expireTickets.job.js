@@ -82,5 +82,5 @@ export function startExpireTicketsJob(io) {
     }
   });
 
-  console.log('⏰ Job de expiración de tickets iniciado (cada hora)');
+  console.log('⏰ Job de expiración de tickets iniciado');
 }
