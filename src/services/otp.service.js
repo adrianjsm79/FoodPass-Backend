@@ -6,6 +6,7 @@ import { createError } from '../middlewares/error.middleware.js';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 const OTP_EXPIRY_MINUTES = 10;
+const RESEND_FROM_EMAIL = process.env.RESEND_FROM_EMAIL || 'onboarding@resend.dev';
 
 export async function enviarOTP(usuarioId, correo, nombre) {
   // Invalidar OTPs anteriores del mismo usuario
@@ -25,7 +26,7 @@ export async function enviarOTP(usuarioId, correo, nombre) {
 
   // Enviar correo
   await resend.emails.send({
-    from: 'FoodPass <no-reply@foodpass.page.dev>',
+    from: RESEND_FROM_EMAIL,
     to: correo,
     subject: `${codigo} es tu código de FoodPass`,
     html: `
