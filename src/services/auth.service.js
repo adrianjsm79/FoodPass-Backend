@@ -93,7 +93,7 @@ export async function login(correo, contrasena) {
   }
  
   const { rows } = await pool.query(
-    'SELECT id, nombre_completo, correo, contrasena_hash, activo FROM usuarios WHERE correo = $1',
+    'SELECT id, nombre_completo, correo, contrasena_hash, activo, correo_verificado FROM usuarios WHERE correo = $1',
     [correo]
   );
  
@@ -134,6 +134,7 @@ export async function login(correo, contrasena) {
       id: user.id,
       nombre_completo: user.nombre_completo,
       correo: user.correo,
+      correo_verificado: user.correo_verificado,
     },
     instituciones,
   };
@@ -212,7 +213,7 @@ export async function getUserByEmail(correo) {
 
 export async function loginWithOTP(userId) {
   const { rows } = await pool.query(
-    'SELECT id, nombre_completo, correo, activo FROM usuarios WHERE id = $1',
+    'SELECT id, nombre_completo, correo, activo, correo_verificado FROM usuarios WHERE id = $1',
     [userId]
   );
 
@@ -248,6 +249,7 @@ export async function loginWithOTP(userId) {
       id: user.id,
       nombre_completo: user.nombre_completo,
       correo: user.correo,
+      correo_verificado: user.correo_verificado,
     },
     instituciones,
   };
