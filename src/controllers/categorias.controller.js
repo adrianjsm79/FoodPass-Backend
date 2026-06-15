@@ -6,7 +6,7 @@ export async function listar(req, res, next) {
     const institucionId = req.institucionId;
 
     const result = await pool.query(
-      `SELECT id, nombre, icono, activo
+      `SELECT id, nombre, icono, imagen_url, activo
        FROM categorias_producto
        WHERE institucion_id = $1
        ORDER BY nombre`,
@@ -23,17 +23,17 @@ export async function listar(req, res, next) {
 export async function crear(req, res, next) {
   try {
     const institucionId = req.institucionId;
-    const { nombre, icono } = req.body;
+    const { nombre, icono, imagen_url } = req.body;
 
     if (!nombre) {
       return res.status(400).json({ error: 'El campo nombre es requerido' });
     }
 
     const result = await pool.query(
-      `INSERT INTO categorias_producto (institucion_id, nombre, icono, activo)
-       VALUES ($1, $2, $3, true)
-       RETURNING id, nombre, icono, activo`,
-      [institucionId, nombre, icono || null]
+      `INSERT INTO categorias_producto (institucion_id, nombre, icono, imagen_url, activo)
+       VALUES ($1, $2, $3, $4, true)
+       RETURNING id, nombre, icono, imagen_url, activo`,
+      [institucionId, nombre, icono || null, imagen_url || null]
     );
 
     res.status(201).json(result.rows[0]);
@@ -47,7 +47,7 @@ export async function actualizar(req, res, next) {
   try {
     const institucionId = req.institucionId;
     const { categoriaId } = req.params;
-    const { nombre, icono, activo } = req.body;
+    const { nombre, icono, imagen_url, activo } = req.body;
 
     const fields = [];
     const values = [];
@@ -55,6 +55,7 @@ export async function actualizar(req, res, next) {
 
     if (nombre !== undefined) { fields.push(`nombre = $${i++}`); values.push(nombre); }
     if (icono  !== undefined) { fields.push(`icono = $${i++}`);  values.push(icono);  }
+    if (imagen_url !== undefined) { fields.push(`imagen_url = $${i++}`); values.push(imagen_url); }
     if (activo !== undefined) { fields.push(`activo = $${i++}`); values.push(activo); }
 
     if (fields.length === 0) {
@@ -67,7 +68,7 @@ export async function actualizar(req, res, next) {
       `UPDATE categorias_producto
        SET ${fields.join(', ')}
        WHERE id = $${i} AND institucion_id = $${i + 1}
-       RETURNING id, nombre, icono, activo`,
+       RETURNING id, nombre, icono, imagen_url, activo`,
       values
     );
 
