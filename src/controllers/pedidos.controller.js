@@ -79,7 +79,7 @@ export async function crear(req, res, next) {
   const client = await pool.connect();
   try {
     const institucionId = req.institucionId;
-    const { usuario_id, cajero_id, canal, items, metodo_pago, cuenta_postpago_id } = req.body;
+    const { usuario_id, cajero_id, canal, items, metodo_pago, cuenta_postpago_id, referencia_externa } = req.body;
 
     if (!items || items.length === 0) {
       return res.status(400).json({ error: 'Se requiere al menos un item' });
@@ -170,9 +170,9 @@ export async function crear(req, res, next) {
 
     // 3. Registrar el pago
     await client.query(
-      `INSERT INTO pagos (pedido_id, institucion_id, metodo_pago_id, monto, estado)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [pedido.id, institucionId, metodoPagoId, montoTotal, 'COMPLETADO']
+      `INSERT INTO pagos (pedido_id, institucion_id, metodo_pago_id, monto, estado, referencia_externa)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [pedido.id, institucionId, metodoPagoId, montoTotal, 'COMPLETADO', referencia_externa || null]
     );
 
     // 4. Lógica extra si es POSTPAGO
