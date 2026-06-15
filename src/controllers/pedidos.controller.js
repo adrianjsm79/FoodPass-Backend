@@ -79,10 +79,18 @@ export async function crear(req, res, next) {
   const client = await pool.connect();
   try {
     const institucionId = req.institucionId;
-    const { usuario_id, cajero_id, canal, items } = req.body;
+    const { usuario_id, cajero_id, canal, items, metodo_pago, cuenta_postpago_id } = req.body;
 
     if (!items || items.length === 0) {
       return res.status(400).json({ error: 'Se requiere al menos un item' });
+    }
+
+    if (!metodo_pago) {
+      return res.status(400).json({ error: 'Se requiere especificar metodo_pago' });
+    }
+
+    if (metodo_pago.toLowerCase() === 'postpago' && !cuenta_postpago_id) {
+      return res.status(400).json({ error: 'Se requiere cuenta_postpago_id para método postpago' });
     }
 
     const montoTotal = items.reduce(
@@ -92,13 +100,41 @@ export async function crear(req, res, next) {
 
     await client.query('BEGIN');
 
+    // 1. Obtener ID del método de pago
+    const mpResult = await client.query(
+      `SELECT id FROM metodos_pago WHERE LOWER(nombre) = LOWER($1)`,
+      [metodo_pago]
+    );
+
+    if (mpResult.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: `Método de pago no reconocido: ${metodo_pago}` });
+    }
+    const metodoPagoId = mpResult.rows[0].id;
+
+    // Si es postpago, validamos la cuenta primero y obtenemos el usuario dueño
+    let usuarioFinalId = usuario_id || null;
+    
+    if (metodo_pago.toLowerCase() === 'postpago') {
+      const cuentaResult = await client.query(
+        `SELECT usuario_id FROM cuentas_postpago WHERE id = $1 AND institucion_id = $2`,
+        [cuenta_postpago_id, institucionId]
+      );
+      if (cuentaResult.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'Cuenta postpago no encontrada o no pertenece a la institución' });
+      }
+      // Asignar el pedido al dueño de la cuenta postpago
+      usuarioFinalId = cuentaResult.rows[0].usuario_id;
+    }
+
     const pedidoResult = await client.query(
       `INSERT INTO pedidos (institucion_id, usuario_id, cajero_id, canal, estado, monto_total)
        VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING id, usuario_id, cajero_id, canal, estado, monto_total, creado_en`,
       [
         institucionId,
-        usuario_id   || null,
+        usuarioFinalId,
         cajero_id    || null,
         canal        || 'POS',
         'PAGADO',
@@ -129,6 +165,31 @@ export async function crear(req, res, next) {
            (producto_id, institucion_id, cambio_cantidad, motivo, tipo_origen, origen_id)
          VALUES ($1, $2, $3, $4, $5, $6)`,
         [item.producto_id, institucionId, -item.cantidad, 'VENTA', 'PEDIDO', pedido.id]
+      );
+    }
+
+    // 3. Registrar el pago
+    await client.query(
+      `INSERT INTO pagos (pedido_id, institucion_id, metodo_pago_id, monto, estado)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [pedido.id, institucionId, metodoPagoId, montoTotal, 'COMPLETADO']
+    );
+
+    // 4. Lógica extra si es POSTPAGO
+    if (metodo_pago.toLowerCase() === 'postpago') {
+      // Insertar transacción de postpago
+      await client.query(
+        `INSERT INTO transacciones_postpago (cuenta_id, pedido_id, monto, tipo, descripcion)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [cuenta_postpago_id, pedido.id, montoTotal, 'CARGO', 'Compra en POS']
+      );
+
+      // Actualizar deuda
+      await client.query(
+        `UPDATE cuentas_postpago
+         SET saldo_deuda = saldo_deuda + $1, actualizado_en = CURRENT_TIMESTAMP
+         WHERE id = $2`,
+        [montoTotal, cuenta_postpago_id]
       );
     }
 
