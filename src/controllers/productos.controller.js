@@ -209,7 +209,7 @@ export async function desactivar(req, res, next) {
     const { productoId } = req.params;
 
     const result = await pool.query(
-      `UPDATE productos SET activo = false
+      `DELETE FROM productos
        WHERE id = $1 AND institucion_id = $2
        RETURNING id`,
       [productoId, institucionId]
@@ -221,6 +221,9 @@ export async function desactivar(req, res, next) {
 
     res.json({ success: true });
   } catch (error) {
+    if (error.code === '23503') {
+      return res.status(400).json({ error: 'No se puede eliminar el producto porque ya tiene ventas o pedidos registrados' });
+    }
     next(error);
   }
 }
