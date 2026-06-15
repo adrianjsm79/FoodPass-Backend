@@ -105,7 +105,7 @@ export async function obtener(req, res, next) {
 export async function crear(req, res, next) {
   try {
     const institucionId = req.institucionId;
-    const { nombre, descripcion, precio, categoria_id, genera_ticket, imagen_url } = req.body;
+    const { nombre, descripcion, precio, categoria_id, genera_ticket, imagen_url, stock, umbral } = req.body;
 
     if (!nombre || !precio || !categoria_id) {
       return res.status(400).json({
@@ -135,11 +135,14 @@ export async function crear(req, res, next) {
 
     const producto = insertResult.rows[0];
 
+    const stockInicial = parseInt(stock) || 0;
+    const umbralInicial = parseInt(umbral) || 5;
+
     // Crear registro de stock inicial
     await pool.query(
       `INSERT INTO stock_producto (producto_id, cantidad, umbral_stock_bajo)
-       VALUES ($1, 0, 5)`,
-      [producto.id]
+       VALUES ($1, $2, $3)`,
+      [producto.id, stockInicial, umbralInicial]
     );
 
     res.status(201).json({
@@ -148,8 +151,8 @@ export async function crear(req, res, next) {
       descripcion: producto.descripcion,
       categoria:   producto.categoria,
       precio:      parseFloat(producto.precio),
-      stock:       0,
-      umbral:      5,
+      stock:       stockInicial,
+      umbral:      umbralInicial,
       generaTicket: producto.generaTicket,
       estado:      'activo',
       imagen:      producto.imagen,
@@ -194,6 +197,24 @@ export async function actualizar(req, res, next) {
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Producto no encontrado' });
+    }
+
+    if (req.body.stock !== undefined || req.body.umbral !== undefined) {
+      const stockFields = [];
+      const stockValues = [];
+      let j = 1;
+      
+      if (req.body.stock !== undefined) { stockFields.push(`cantidad = $${j++}`); stockValues.push(parseInt(req.body.stock)); }
+      if (req.body.umbral !== undefined) { stockFields.push(`umbral_stock_bajo = $${j++}`); stockValues.push(parseInt(req.body.umbral)); }
+      
+      stockValues.push(productoId);
+      
+      await pool.query(
+        `UPDATE stock_producto
+         SET ${stockFields.join(', ')}
+         WHERE producto_id = $${j}`,
+        stockValues
+      );
     }
 
     res.json(result.rows[0]);
