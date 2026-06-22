@@ -137,7 +137,8 @@ export async function listarTickets({ institucion_id, estado, desde, hasta, usua
 
   const { rows } = await pool.query(
     `SELECT t.id, t.codigo, t.estado, t.expira_en, t.canjeado_en, t.creado_en,
-            u.nombre_completo AS nombre_usuario, pr.nombre AS nombre_producto
+            u.nombre_completo AS nombre_usuario, pr.nombre AS nombre_producto,
+            p.canal
      FROM tickets t
      JOIN items_pedido ip ON ip.id = t.item_pedido_id
      JOIN pedidos p ON p.id = ip.pedido_id
