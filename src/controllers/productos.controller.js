@@ -229,22 +229,44 @@ export async function desactivar(req, res, next) {
     const institucionId = req.institucionId;
     const { productoId } = req.params;
 
-    const result = await pool.query(
-      `DELETE FROM productos
-       WHERE id = $1 AND institucion_id = $2
-       RETURNING id`,
-      [productoId, institucionId]
-    );
+    // Intentar eliminar físicamente primero
+    try {
+      const result = await pool.query(
+        `DELETE FROM productos
+         WHERE id = $1 AND institucion_id = $2
+         RETURNING id`,
+        [productoId, institucionId]
+      );
 
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Producto no encontrado' });
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: 'Producto no encontrado' });
+      }
+
+      return res.json({ success: true, metodo: 'eliminado' });
+    } catch (deleteError) {
+      // Si falla por FK constraint (tiene ventas/pedidos), hacer soft delete
+      if (deleteError.code === '23503') {
+        const softResult = await pool.query(
+          `UPDATE productos
+           SET activo = false
+           WHERE id = $1 AND institucion_id = $2
+           RETURNING id`,
+          [productoId, institucionId]
+        );
+
+        if (softResult.rows.length === 0) {
+          return res.status(404).json({ error: 'Producto no encontrado' });
+        }
+
+        return res.json({
+          success: true,
+          metodo: 'desactivado',
+          mensaje: 'El producto tiene ventas asociadas. Se desactivó del catálogo en lugar de eliminarse.',
+        });
+      }
+      throw deleteError;
     }
-
-    res.json({ success: true });
   } catch (error) {
-    if (error.code === '23503') {
-      return res.status(400).json({ error: 'No se puede eliminar el producto porque ya tiene ventas o pedidos registrados' });
-    }
     next(error);
   }
 }
