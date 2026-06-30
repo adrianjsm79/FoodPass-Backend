@@ -19,4 +19,10 @@ router.get('/deuda-postpago', ctrl.deudaPostpago);
 // Resumen general del dashboard
 router.get('/resumen', ctrl.resumen);
 
+// Métodos de pago agrupados (para gráfico donut)
+router.get('/metodos-pago', ctrl.metodosPago);
+
+// Ventas semanales por canal APP vs POS (para gráfico de barras)
+router.get('/ventas-semanales', ctrl.ventasSemanales);
+
 export default router;

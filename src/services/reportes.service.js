@@ -120,3 +120,51 @@ export async function resumenDashboard(institucion_id) {
     total_deuda_postpago: parseFloat(deudaTotal.rows[0].total_deuda),
   };
 }
+
+// ─── Métodos de pago agrupados ─────────────────────────────────────────────────
+export async function metodosPago(institucion_id) {
+  const { rows } = await pool.query(
+    `SELECT
+       mp.nombre AS name,
+       COUNT(pa.id)::int AS value,
+       COALESCE(SUM(pa.monto), 0)::numeric AS amount
+     FROM pagos pa
+     JOIN metodos_pago mp ON mp.id = pa.metodo_pago_id
+     WHERE pa.institucion_id = $1 AND pa.estado = 'COMPLETADO'
+     GROUP BY mp.nombre
+     ORDER BY amount DESC`,
+    [institucion_id]
+  );
+  return rows.map(r => ({
+    name: r.name,
+    value: parseInt(r.value),
+    amount: parseFloat(r.amount),
+  }));
+}
+
+// ─── Ventas semanales por canal (APP vs POS) ───────────────────────────────────
+export async function ventasSemanalesPorCanal(institucion_id) {
+  const { rows } = await pool.query(
+    `SELECT
+       TO_CHAR(p.creado_en, 'Dy') AS day,
+       p.creado_en::date AS fecha,
+       COALESCE(SUM(CASE WHEN p.canal = 'APP' THEN p.monto_total ELSE 0 END), 0)::numeric AS "APP",
+       COALESCE(SUM(CASE WHEN p.canal = 'POS' THEN p.monto_total ELSE 0 END), 0)::numeric AS "POS"
+     FROM pedidos p
+     WHERE p.institucion_id = $1
+       AND p.estado = 'PAGADO'
+       AND p.creado_en >= CURRENT_DATE - INTERVAL '6 days'
+     GROUP BY p.creado_en::date, TO_CHAR(p.creado_en, 'Dy')
+     ORDER BY fecha`,
+    [institucion_id]
+  );
+
+  // Map day abbreviations to Spanish
+  const dayMap = { Mon: 'Lun', Tue: 'Mar', Wed: 'Mié', Thu: 'Jue', Fri: 'Vie', Sat: 'Sáb', Sun: 'Dom' };
+
+  return rows.map(r => ({
+    day: dayMap[r.day?.trim()] || r.day?.trim(),
+    APP: parseFloat(r.APP),
+    POS: parseFloat(r.POS),
+  }));
+}
