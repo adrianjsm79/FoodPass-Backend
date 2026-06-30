@@ -25,4 +25,10 @@ router.get('/metodos-pago', ctrl.metodosPago);
 // Ventas semanales por canal APP vs POS (para gráfico de barras)
 router.get('/ventas-semanales', ctrl.ventasSemanales);
 
+// Productos más vendidos (parámetros: desde, hasta, limit)
+router.get('/productos-top', ctrl.productosTop);
+
+// Ventas por canal con rango de fechas (parámetros: desde, hasta, agrupar_por)
+router.get('/ventas-por-canal', ctrl.ventasPorCanal);
+
 export default router;

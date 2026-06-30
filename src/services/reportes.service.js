@@ -167,4 +167,72 @@ export async function ventasSemanalesPorCanal(institucion_id) {
     APP: parseFloat(r.APP),
     POS: parseFloat(r.POS),
   }));
-}
+}
+
+// ─── Productos top ventas ──────────────────────────────────────────────────────
+export async function productosTopVentas({ institucion_id, desde, hasta, limit = 10 }) {
+  const params = [institucion_id];
+  let dateFilter = '';
+  if (desde) { params.push(desde); dateFilter += ` AND pe.creado_en >= $${params.length}`; }
+  if (hasta) { params.push(hasta); dateFilter += ` AND pe.creado_en <= $${params.length}`; }
+  params.push(limit);
+
+  const { rows } = await pool.query(
+    `SELECT
+       p.nombre AS name,
+       SUM(ip.cantidad)::int AS qty,
+       SUM(ip.subtotal)::numeric AS revenue
+     FROM items_pedido ip
+     JOIN pedidos pe ON pe.id = ip.pedido_id
+     JOIN productos p ON p.id = ip.producto_id
+     WHERE pe.institucion_id = $1 AND pe.estado = 'PAGADO' ${dateFilter}
+     GROUP BY p.id, p.nombre
+     ORDER BY revenue DESC
+     LIMIT $${params.length}`,
+    params
+  );
+
+  return rows.map(r => ({
+    name: r.name,
+    qty: parseInt(r.qty),
+    revenue: parseFloat(r.revenue),
+  }));
+}
+
+// ─── Ventas por canal con rango de fechas ──────────────────────────────────────
+export async function ventasPorCanal({ institucion_id, desde, hasta, agrupar_por = 'dia' }) {
+  const formatMap = { dia: 'YYYY-MM-DD', semana: 'IYYY-IW', mes: 'YYYY-MM' };
+  const labelMap = { dia: 'DD Mon', semana: 'IYYY-IW', mes: 'Mon YYYY' };
+  const formato = formatMap[agrupar_por] || 'YYYY-MM-DD';
+  const labelFormato = labelMap[agrupar_por] || 'DD Mon';
+
+  const params = [institucion_id];
+  let dateFilter = '';
+  if (desde) { params.push(desde); dateFilter += ` AND p.creado_en >= $${params.length}`; }
+  if (hasta) { params.push(hasta); dateFilter += ` AND p.creado_en <= $${params.length}`; }
+
+  const { rows } = await pool.query(
+    `SELECT
+       TO_CHAR(MIN(p.creado_en), '${labelFormato}') AS label,
+       TO_CHAR(p.creado_en, '${formato}') AS periodo,
+       COALESCE(SUM(CASE WHEN p.canal = 'APP' THEN p.monto_total ELSE 0 END), 0)::numeric AS app,
+       COALESCE(SUM(CASE WHEN p.canal = 'POS' THEN p.monto_total ELSE 0 END), 0)::numeric AS pos,
+       COUNT(DISTINCT p.id)::int AS total_pedidos,
+       COUNT(DISTINCT p.usuario_id)::int AS usuarios_unicos
+     FROM pedidos p
+     WHERE p.institucion_id = $1 AND p.estado = 'PAGADO' ${dateFilter}
+     GROUP BY periodo
+     ORDER BY periodo ASC`,
+    params
+  );
+
+  return rows.map(r => ({
+    label: r.label?.trim(),
+    periodo: r.periodo,
+    app: parseFloat(r.app),
+    pos: parseFloat(r.pos),
+    total_pedidos: parseInt(r.total_pedidos),
+    usuarios_unicos: parseInt(r.usuarios_unicos),
+  }));
+}
+
