@@ -52,4 +52,5 @@ export const SOCKET_EVENTS = {
   STOCK_ACTUALIZADO: 'stock_actualizado',
   NUEVA_DEUDA: 'nueva_deuda',
   ABONO_REGISTRADO: 'abono_registrado',
+  AUDIT_NUEVA_ENTRADA: 'audit:nueva_entrada',
 };

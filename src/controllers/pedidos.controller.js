@@ -1,4 +1,5 @@
 import pool from '../config/db.js';
+import * as audit from '../services/audit.service.js';
 
 /** GET /api/instituciones/:institucionId/pedidos?usuario_id=&estado=&canal=&fecha_desde=&fecha_hasta= */
 export async function listar(req, res, next) {
@@ -203,6 +204,18 @@ export async function crear(req, res, next) {
       req.io.to(institucionId).emit('nuevo_pedido', pedido);
     }
 
+    // Auditoría
+    audit.registrar({
+      institucion_id: institucionId,
+      usuario_id: req.user?.id,
+      usuario_nombre: req.user?.nombre_completo || 'Sistema',
+      accion: 'VENTA_CREADA',
+      categoria: 'VENTAS',
+      descripcion: `Venta POS por S/. ${parseFloat(pedido.monto_total).toFixed(2)} (${items.length} items)`,
+      metadata: { pedido_id: pedido.id, canal: pedido.canal, monto: parseFloat(pedido.monto_total) },
+      ip: req.ip,
+    }).catch(() => {});
+
     res.status(201).json({
       ...pedido,
       monto_total:  parseFloat(pedido.monto_total),
@@ -264,6 +277,18 @@ export async function cancelar(req, res, next) {
     if (req.io) {
       req.io.to(institucionId).emit('pedido_cancelado', { id: pedidoId });
     }
+
+    // Auditoría
+    audit.registrar({
+      institucion_id: institucionId,
+      usuario_id: req.user?.id,
+      usuario_nombre: req.user?.nombre_completo || 'Sistema',
+      accion: 'VENTA_ANULADA',
+      categoria: 'VENTAS',
+      descripcion: `Pedido ${pedidoId.substring(0,8)} anulado`,
+      metadata: { pedido_id: pedidoId },
+      ip: req.ip,
+    }).catch(() => {});
 
     res.json(result.rows[0]);
   } catch (error) {
