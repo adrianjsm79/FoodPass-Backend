@@ -1,4 +1,5 @@
 import * as ticketsService from '../services/tickets.service.js';
+import * as audit from '../services/audit.service.js';
 
 export async function canjear(req, res, next) {
   try {
@@ -8,6 +9,18 @@ export async function canjear(req, res, next) {
       req.user.id,
       req.io
     );
+
+    audit.registrar({
+      institucion_id: req.institucionId,
+      usuario_id: req.user.id,
+      usuario_nombre: req.user.nombre_completo || 'Sistema',
+      accion: 'TICKET_CANJEADO',
+      categoria: 'TICKETS',
+      descripcion: `Ticket canjeado (Código: ${req.params.codigo})`,
+      metadata: { codigo: req.params.codigo, ticket_id: resultado.id },
+      ip: req.ip,
+    }).catch(() => {});
+
     res.json(resultado);
   } catch (err) { next(err); }
 }
