@@ -50,26 +50,44 @@ async function getUserInstituciones(userId) {
 
 // ─── Registro ───────────────────────────────────────────────────────────────────
 
-export async function registro({ nombre_completo, correo, telefono, contrasena }) {
-  if (!nombre_completo || !correo || !contrasena) {
-    throw createError(400, 'nombre_completo, correo y contrasena son requeridos');
+export async function registro({ nombre_completo, correo, telefono, contrasena, institucion_id }) {
+  if (!nombre_completo || !correo || !contrasena || !institucion_id) {
+    throw createError(400, 'nombre_completo, correo, contrasena e institucion_id son requeridos');
   }
 
   const hash = await bcrypt.hash(contrasena, 12);
 
+  const client = await pool.connect();
   try {
-    const { rows } = await pool.query(
+    await client.query('BEGIN');
+
+    // 1. Insertar usuario
+    const { rows } = await client.query(
       `INSERT INTO usuarios (nombre_completo, correo, telefono, contrasena_hash)
        VALUES ($1, $2, $3, $4)
        RETURNING id, nombre_completo, correo, telefono, correo_verificado, creado_en`,
       [nombre_completo, correo, telefono || null, hash]
     );
-    return rows[0];
+
+    const newUser = rows[0];
+
+    // 2. Vincular a institución con rol USUARIO
+    await client.query(
+      `INSERT INTO usuario_institucion_roles (usuario_id, institucion_id, rol_id, modalidad_pago)
+       SELECT $1, $2, id, 'PREPAGO' FROM roles WHERE nombre = 'USUARIO'`,
+      [newUser.id, institucion_id]
+    );
+
+    await client.query('COMMIT');
+    return newUser;
   } catch (err) {
+    await client.query('ROLLBACK');
     if (err.code === '23505') {
       throw createError(409, 'Ya existe un usuario con ese correo');
     }
     throw err;
+  } finally {
+    client.release();
   }
 }
 
@@ -81,7 +99,7 @@ export async function login(correo, contrasena) {
   }
 
   const { rows } = await pool.query(
-    `SELECT id, nombre_completo, correo, contrasena_hash, activo
+    `SELECT id, nombre_completo, correo, contrasena_hash, activo, correo_verificado
      FROM usuarios WHERE correo = $1`,
     [correo]
   );
@@ -104,6 +122,7 @@ export async function login(correo, contrasena) {
       id: user.id,
       nombre_completo: user.nombre_completo,
       correo: user.correo,
+      correo_verificado: user.correo_verificado,
     },
     instituciones,
   };
