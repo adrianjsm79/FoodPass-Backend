@@ -11,6 +11,7 @@ import { errorHandler } from './src/middlewares/error.middleware.js';
 import { startExpireTicketsJob } from './src/jobs/expireTickets.job.js';
 
 const app = express();
+app.set('trust proxy', true);
 const httpServer = createServer(app);
 
 // Socket.IO
