@@ -34,13 +34,16 @@ export async function cerrarTurno(institucion_id, cajero_id, turno_id, monto_dec
 
   // Calcular las ventas POS pagadas durante este turno
   const ventas = await pool.query(
-    `SELECT COALESCE(SUM(monto_total), 0) as total_ventas
-     FROM pedidos
-     WHERE institucion_id = $1 
-       AND cajero_id = $2
-       AND canal = 'POS' 
-       AND estado = 'PAGADO'
-       AND creado_en >= $3`,
+    `SELECT COALESCE(SUM(p.monto_total), 0) as total_ventas
+     FROM pedidos p
+     JOIN pagos pg ON p.id = pg.pedido_id
+     JOIN metodos_pago mp ON pg.metodo_pago_id = mp.id
+     WHERE p.institucion_id = $1 
+       AND p.cajero_id = $2
+       AND p.canal = 'POS' 
+       AND p.estado = 'PAGADO'
+       AND p.creado_en >= $3
+       AND LOWER(mp.nombre) = 'efectivo'`,
     [institucion_id, cajero_id, actual.fecha_apertura]
   );
   const totalVentas = parseFloat(ventas.rows[0].total_ventas) || 0;
