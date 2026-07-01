@@ -1,6 +1,6 @@
 import pool from '../config/db.js';
 import * as audit from '../services/audit.service.js';
-
+import { generarCodigoTicket } from '../utils/ticketCode.js';
 /** GET /api/instituciones/:institucionId/pedidos?usuario_id=&estado=&canal=&fecha_desde=&fecha_hasta= */
 export async function listar(req, res, next) {
   try {
@@ -148,14 +148,22 @@ export async function crear(req, res, next) {
 
     const pedido = pedidoResult.rows[0];
 
+    const configResult = await client.query(
+      `SELECT horas_expiracion_ticket FROM configuracion_institucion WHERE institucion_id = $1`,
+      [institucionId]
+    );
+    const horasExpiracion = configResult.rows[0]?.horas_expiracion_ticket || 48;
+    const ticketsGenerados = [];
+
     for (const item of items) {
       const subtotal = item.precio_unitario * item.cantidad;
 
-      await client.query(
+      const itemInsert = await client.query(
         `INSERT INTO items_pedido (pedido_id, producto_id, cantidad, precio_unitario, subtotal)
-         VALUES ($1, $2, $3, $4, $5)`,
+         VALUES ($1, $2, $3, $4, $5) RETURNING id`,
         [pedido.id, item.producto_id, item.cantidad, item.precio_unitario, subtotal]
       );
+      const itemId = itemInsert.rows[0].id;
 
       // Reducir stock
       await client.query(
@@ -170,6 +178,24 @@ export async function crear(req, res, next) {
          VALUES ($1, $2, $3, $4, $5, $6)`,
         [item.producto_id, institucionId, -item.cantidad, 'VENTA', 'PEDIDO', pedido.id]
       );
+
+      // Generar ticket si es de la app y el producto lo requiere
+      if (canal === 'APP' && item.genera_ticket) {
+        for(let i = 0; i < item.cantidad; i++) {
+          const codigo = generarCodigoTicket();
+          const expiracion = new Date(Date.now() + horasExpiracion * 3600000);
+          const ticketResult = await client.query(
+            `INSERT INTO tickets (item_pedido_id, institucion_id, codigo, estado, expira_en)
+             VALUES ($1, $2, $3, 'VIGENTE', $4) RETURNING id, codigo, estado, expira_en`,
+            [itemId, institucionId, codigo, expiracion]
+          );
+          
+          ticketsGenerados.push({
+            ...ticketResult.rows[0],
+            nombre_producto: item.nombre_producto || 'Producto'
+          });
+        }
+      }
     }
 
     // 3. Registrar el pago
@@ -220,6 +246,7 @@ export async function crear(req, res, next) {
       ...pedido,
       monto_total:  parseFloat(pedido.monto_total),
       items_count:  items.length,
+      tickets: ticketsGenerados,
     });
   } catch (error) {
     await client.query('ROLLBACK');
