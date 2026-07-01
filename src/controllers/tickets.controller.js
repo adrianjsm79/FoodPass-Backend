@@ -51,3 +51,17 @@ export async function listar(req, res, next) {
     res.json(tickets);
   } catch (err) { next(err); }
 }
+
+export async function listarMisTickets(req, res, next) {
+  try {
+    const { estado, limit, offset } = req.query;
+    const tickets = await ticketsService.listarTickets({
+      institucion_id: req.institucionId,
+      estado,
+      usuario_id: req.user.id,
+      limit: parseInt(limit) || 50,
+      offset: parseInt(offset) || 0,
+    });
+    res.json(tickets);
+  } catch (err) { next(err); }
+}

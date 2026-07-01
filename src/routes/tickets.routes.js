@@ -10,6 +10,9 @@ router.use(verifyToken, attachTenant);
 // Listar tickets de la institución (con filtros: estado, fecha, usuario)
 router.get('/', requireRole('ADMIN_INSTITUCION', 'CAJERO'), ctrl.listar);
 
+// Listar mis tickets (usuario autenticado)
+router.get('/mis-tickets', ctrl.listarMisTickets);
+
 // Buscar ticket por código (para canje manual desde POS/dashboard)
 router.get('/buscar/:codigo', requireRole('ADMIN_INSTITUCION', 'CAJERO'), ctrl.buscarPorCodigo);
 
