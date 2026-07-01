@@ -79,7 +79,10 @@ export async function crear(req, res, next) {
   const client = await pool.connect();
   try {
     const institucionId = req.institucionId;
-    const { usuario_id, cajero_id, canal, items, metodo_pago, cuenta_postpago_id, referencia_externa } = req.body;
+    const { usuario_id, canal, items, metodo_pago, cuenta_postpago_id, referencia_externa } = req.body;
+    
+    // Extraer cajero de req.user si existe, sino del body (para compatibilidad)
+    const cajero_id = req.user?.id || req.body.cajero_id;
 
     if (!items || items.length === 0) {
       return res.status(400).json({ error: 'Se requiere al menos un item' });
