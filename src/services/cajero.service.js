@@ -90,3 +90,83 @@ export async function resumenDashboardCajero(institucion_id, cajero_id) {
     actividadReciente,
   };
 }
+
+export async function obtenerHistorialHoy(institucion_id, cajero_id) {
+  const hoy = new Date();
+  const inicioHoy = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+
+  const queryActividad = await pool.query(
+    `SELECT p.id, p.canal, p.estado, p.monto_total, p.creado_en, u.nombre_completo as usuario
+     FROM pedidos p
+     LEFT JOIN usuarios u ON p.usuario_id = u.id
+     WHERE p.institucion_id = $1 
+       AND (p.estado = 'PAGADO' OR p.estado = 'CANCELADO')
+       AND p.creado_en >= $2
+     ORDER BY p.creado_en DESC`,
+    [institucion_id, inicioHoy]
+  );
+  
+  return queryActividad.rows.map(r => ({
+    id: r.id,
+    type: r.canal === 'APP' ? 'ticket' : 'sale',
+    description: r.canal === 'APP' ? 'Ticket validado' : 'Venta en POS',
+    amount: parseFloat(r.monto_total),
+    timestamp: r.creado_en,
+    usuario: r.usuario || 'Anónimo',
+    estado: r.estado
+  }));
+}
+
+export async function anularVenta(institucion_id, cajero_id, pedido_id) {
+  // 1. Obtener pedido
+  const pedido = await pool.query(
+    `SELECT * FROM pedidos WHERE id = $1 AND institucion_id = $2`,
+    [pedido_id, institucion_id]
+  );
+  if (pedido.rows.length === 0) throw new Error('Pedido no encontrado');
+  const p = pedido.rows[0];
+  if (p.estado === 'CANCELADO') throw new Error('El pedido ya está anulado');
+  if (p.canal !== 'POS') throw new Error('Solo se pueden anular ventas POS manualmente');
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // 2. Cancelar el pedido
+    await client.query(
+      `UPDATE pedidos SET estado = 'CANCELADO' WHERE id = $1`,
+      [pedido_id]
+    );
+
+    // 3. Obtener items y restaurar stock
+    const items = await client.query(
+      `SELECT producto_id, cantidad FROM items_pedido WHERE pedido_id = $1`,
+      [pedido_id]
+    );
+
+    for (const item of items.rows) {
+      // Restaurar stock
+      await client.query(
+        `UPDATE stock_producto 
+         SET cantidad = cantidad + $1, actualizado_en = CURRENT_TIMESTAMP
+         WHERE producto_id = $2`,
+        [item.cantidad, item.producto_id]
+      );
+      // Registrar movimiento de auditoría
+      await client.query(
+        `INSERT INTO movimientos_stock (producto_id, institucion_id, cambio_cantidad, motivo, tipo_origen, origen_id, realizado_por)
+         VALUES ($1, $2, $3, 'CANCELACION', 'PEDIDO', $4, $5)`,
+        [item.producto_id, institucion_id, item.cantidad, pedido_id, cajero_id]
+      );
+    }
+
+    await client.query('COMMIT');
+    return { message: 'Venta anulada correctamente' };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+

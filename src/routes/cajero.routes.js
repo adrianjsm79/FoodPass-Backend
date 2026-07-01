@@ -11,4 +11,10 @@ router.use(verifyToken, attachTenant, requireRole('CAJERO', 'ADMIN_INSTITUCION',
 // Dashboard resumen para el cajero
 router.get('/dashboard', ctrl.dashboard);
 
+// Historial del día
+router.get('/historial', ctrl.historial);
+
+// Anulación de venta
+router.post('/anular/:pedidoId', ctrl.anularVenta);
+
 export default router;
