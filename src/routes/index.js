@@ -13,6 +13,7 @@ import reportesRouter from './reportes.routes.js';
 import cajeroRouter from './cajero.routes.js';
 import cajaRouter from './caja.routes.js';
 import notificacionesRouter from './notificaciones.routes.js';
+import balanceRouter from './balance.routes.js';
 
 export const router = Router();
 
@@ -36,3 +37,4 @@ router.use('/instituciones/:institucionId/stock', stockRouter);
 router.use('/instituciones/:institucionId/reportes', reportesRouter);
 router.use('/instituciones/:institucionId/cajero', cajeroRouter);
 router.use('/instituciones/:institucionId/caja', cajaRouter);
+router.use('/instituciones/:institucionId/balance', balanceRouter);
