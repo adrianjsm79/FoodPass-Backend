@@ -1,4 +1,5 @@
 import pool from '../config/db.js';
+import * as audit from '../services/audit.service.js';
 
 /** GET /api/instituciones/:institucionId/productos?categoria_id=... */
 export async function listar(req, res, next) {
@@ -157,6 +158,17 @@ export async function crear(req, res, next) {
       estado:      'activo',
       imagen:      producto.imagen,
     });
+
+    audit.registrar({
+      institucion_id: institucionId,
+      usuario_id: req.user?.id,
+      usuario_nombre: req.user?.nombre_completo || 'Sistema',
+      accion: 'PRODUCTO_CREADO',
+      categoria: 'PRODUCTOS',
+      descripcion: `Producto "${producto.nombre}" creado (Precio: S/. ${parseFloat(producto.precio).toFixed(2)})`,
+      metadata: { producto_id: producto.id, nombre: producto.nombre, precio: parseFloat(producto.precio) },
+      ip: req.ip,
+    }).catch(() => {});
   } catch (error) {
     next(error);
   }
@@ -217,6 +229,17 @@ export async function actualizar(req, res, next) {
       );
     }
 
+    audit.registrar({
+      institucion_id: institucionId,
+      usuario_id: req.user?.id,
+      usuario_nombre: req.user?.nombre_completo || 'Sistema',
+      accion: 'PRODUCTO_EDITADO',
+      categoria: 'PRODUCTOS',
+      descripcion: `Producto "${result.rows[0].nombre}" (ID: ${productoId.substring(0,8)}) editado`,
+      metadata: { producto_id: productoId, cambios: Object.keys(req.body) },
+      ip: req.ip,
+    }).catch(() => {});
+
     res.json(result.rows[0]);
   } catch (error) {
     next(error);
@@ -242,6 +265,17 @@ export async function desactivar(req, res, next) {
         return res.status(404).json({ error: 'Producto no encontrado' });
       }
 
+      audit.registrar({
+        institucion_id: institucionId,
+        usuario_id: req.user?.id,
+        usuario_nombre: req.user?.nombre_completo || 'Sistema',
+        accion: 'PRODUCTO_ELIMINADO',
+        categoria: 'PRODUCTOS',
+        descripcion: `Producto eliminado físicamente (ID: ${productoId.substring(0,8)})`,
+        metadata: { producto_id: productoId },
+        ip: req.ip,
+      }).catch(() => {});
+
       return res.json({ success: true, metodo: 'eliminado' });
     } catch (deleteError) {
       // Si falla por FK constraint (tiene ventas/pedidos), hacer soft delete
@@ -257,6 +291,17 @@ export async function desactivar(req, res, next) {
         if (softResult.rows.length === 0) {
           return res.status(404).json({ error: 'Producto no encontrado' });
         }
+
+        audit.registrar({
+          institucion_id: institucionId,
+          usuario_id: req.user?.id,
+          usuario_nombre: req.user?.nombre_completo || 'Sistema',
+          accion: 'PRODUCTO_DESACTIVADO',
+          categoria: 'PRODUCTOS',
+          descripcion: `Producto desactivado (soft-delete) por tener ventas asociadas (ID: ${productoId.substring(0,8)})`,
+          metadata: { producto_id: productoId },
+          ip: req.ip,
+        }).catch(() => {});
 
         return res.json({
           success: true,
