@@ -11,14 +11,12 @@ import crypto from 'crypto';
 export function generarCodigoTicket() {
   // Caracteres que no se confunden visualmente (sin 0/O, 1/I/L)
   const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-  const bytes = crypto.randomBytes(8);
-  let parte1 = '';
-  let parte2 = '';
+  const bytes = crypto.randomBytes(6);
+  let codigo = '';
 
-  for (let i = 0; i < 4; i++) {
-    parte1 += chars[bytes[i] % chars.length];
-    parte2 += chars[bytes[i + 4] % chars.length];
+  for (let i = 0; i < 6; i++) {
+    codigo += chars[bytes[i] % chars.length];
   }
 
-  return `FP-${parte1}-${parte2}`;
+  return codigo;
 }

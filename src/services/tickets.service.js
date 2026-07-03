@@ -2,6 +2,19 @@ import pool from '../config/db.js';
 import { createError } from '../middlewares/error.middleware.js';
 import { SOCKET_EVENTS } from '../config/socket.js';
 
+const itemsSubquery = `
+  (
+    SELECT json_agg(json_build_object(
+      'nombre', pr.nombre,
+      'cantidad', ip.cantidad,
+      'precio', ip.precio_unitario
+    ))
+    FROM items_pedido ip
+    JOIN productos pr ON pr.id = ip.producto_id
+    WHERE ip.pedido_id = t.pedido_id
+  ) AS items
+`;
+
 // ─── Canjear ticket ────────────────────────────────────────────────────────────
 export async function canjearTicket(codigo, institucionId, cajeroId, io) {
   const client = await pool.connect();
@@ -10,11 +23,9 @@ export async function canjearTicket(codigo, institucionId, cajeroId, io) {
 
     // Buscar y bloquear el ticket
     const { rows } = await client.query(
-      `SELECT t.*, u.nombre_completo AS nombre_usuario, pr.nombre AS nombre_producto
+      `SELECT t.*, u.nombre_completo AS nombre_usuario, p.canal, ${itemsSubquery}
        FROM tickets t
-       JOIN items_pedido ip ON ip.id = t.item_pedido_id
-       JOIN pedidos p ON p.id = ip.pedido_id
-       JOIN productos pr ON pr.id = ip.producto_id
+       JOIN pedidos p ON p.id = t.pedido_id
        LEFT JOIN usuarios u ON u.id = p.usuario_id
        WHERE t.codigo = $1 AND t.institucion_id = $2
        FOR UPDATE OF t`,
@@ -60,7 +71,8 @@ export async function canjearTicket(codigo, institucionId, cajeroId, io) {
       ticket_id: ticket.id,
       codigo: ticket.codigo,
       estado: 'CANJEADO',
-      nombre_producto: ticket.nombre_producto,
+      nombre_producto: 'Pedido Completo',
+      items: ticket.items,
       nombre_usuario: ticket.nombre_usuario,
       canjeado_en: new Date(),
     };
@@ -82,12 +94,9 @@ export async function canjearTicket(codigo, institucionId, cajeroId, io) {
 // ─── Buscar ticket por código ──────────────────────────────────────────────────
 export async function buscarPorCodigo(codigo, institucionId) {
   const { rows } = await pool.query(
-    `SELECT t.*, u.nombre_completo AS nombre_usuario, pr.nombre AS nombre_producto,
-            p.canal, p.creado_en AS pedido_fecha
+    `SELECT t.*, u.nombre_completo AS nombre_usuario, p.canal, p.creado_en AS pedido_fecha, ${itemsSubquery}
      FROM tickets t
-     JOIN items_pedido ip ON ip.id = t.item_pedido_id
-     JOIN pedidos p ON p.id = ip.pedido_id
-     JOIN productos pr ON pr.id = ip.producto_id
+     JOIN pedidos p ON p.id = t.pedido_id
      LEFT JOIN usuarios u ON u.id = p.usuario_id
      WHERE t.codigo = $1 AND t.institucion_id = $2`,
     [codigo, institucionId]
@@ -99,11 +108,9 @@ export async function buscarPorCodigo(codigo, institucionId) {
 // ─── Obtener ticket con historial ─────────────────────────────────────────────
 export async function obtenerTicket(ticketId, institucionId) {
   const { rows } = await pool.query(
-    `SELECT t.*, u.nombre_completo AS nombre_usuario, pr.nombre AS nombre_producto
+    `SELECT t.*, u.nombre_completo AS nombre_usuario, p.canal, ${itemsSubquery}
      FROM tickets t
-     JOIN items_pedido ip ON ip.id = t.item_pedido_id
-     JOIN pedidos p ON p.id = ip.pedido_id
-     JOIN productos pr ON pr.id = ip.producto_id
+     JOIN pedidos p ON p.id = t.pedido_id
      LEFT JOIN usuarios u ON u.id = p.usuario_id
      WHERE t.id = $1 AND t.institucion_id = $2`,
     [ticketId, institucionId]
@@ -137,12 +144,9 @@ export async function listarTickets({ institucion_id, estado, desde, hasta, usua
 
   const { rows } = await pool.query(
     `SELECT t.id, t.codigo, t.estado, t.expira_en, t.canjeado_en, t.creado_en,
-            u.nombre_completo AS nombre_usuario, pr.nombre AS nombre_producto,
-            p.canal
+            u.nombre_completo AS nombre_usuario, p.canal, ${itemsSubquery}
      FROM tickets t
-     JOIN items_pedido ip ON ip.id = t.item_pedido_id
-     JOIN pedidos p ON p.id = ip.pedido_id
-     JOIN productos pr ON pr.id = ip.producto_id
+     JOIN pedidos p ON p.id = t.pedido_id
      LEFT JOIN usuarios u ON u.id = p.usuario_id
      WHERE ${conditions.join(' AND ')}
      ORDER BY t.creado_en DESC

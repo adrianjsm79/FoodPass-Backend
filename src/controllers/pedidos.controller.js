@@ -154,6 +154,7 @@ export async function crear(req, res, next) {
     );
     const horasExpiracion = configResult.rows[0]?.horas_expiracion_ticket || 48;
     const ticketsGenerados = [];
+    let requiereTicket = false;
 
     for (const item of items) {
       const subtotal = item.precio_unitario * item.cantidad;
@@ -179,23 +180,23 @@ export async function crear(req, res, next) {
         [item.producto_id, institucionId, -item.cantidad, 'VENTA', 'PEDIDO', pedido.id]
       );
 
-      // Generar ticket si es de la app y el producto lo requiere
-      if (canal === 'APP' && item.genera_ticket) {
-        for(let i = 0; i < item.cantidad; i++) {
-          const codigo = generarCodigoTicket();
-          const expiracion = new Date(Date.now() + horasExpiracion * 3600000);
-          const ticketResult = await client.query(
-            `INSERT INTO tickets (item_pedido_id, institucion_id, codigo, estado, expira_en)
-             VALUES ($1, $2, $3, 'VIGENTE', $4) RETURNING id, codigo, estado, expira_en`,
-            [itemId, institucionId, codigo, expiracion]
-          );
-          
-          ticketsGenerados.push({
-            ...ticketResult.rows[0],
-            nombre_producto: item.nombre_producto || 'Producto'
-          });
-        }
-      }
+      if (item.genera_ticket) requiereTicket = true;
+    }
+
+    // Generar un único ticket por todo el pedido si es de la app y requiere ticket
+    if (canal === 'APP' && requiereTicket) {
+      const codigo = generarCodigoTicket();
+      const expiracion = new Date(Date.now() + horasExpiracion * 3600000);
+      const ticketResult = await client.query(
+        `INSERT INTO tickets (pedido_id, institucion_id, codigo, estado, expira_en)
+         VALUES ($1, $2, $3, 'VIGENTE', $4) RETURNING id, codigo, estado, expira_en`,
+        [pedido.id, institucionId, codigo, expiracion]
+      );
+      
+      ticketsGenerados.push({
+        ...ticketResult.rows[0],
+        nombre_producto: 'Pedido Completo'
+      });
     }
 
     // 3. Registrar el pago
